@@ -1,10 +1,8 @@
 import os
 import pyotp
-import json
-from pathlib import Path
 from dotenv import load_dotenv
-from playwright.async_api import TimeoutError as PlaywrightTimeout
-from utils.browser import new_page, close_page
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
+from utils.browser import new_page, close_browser, save_cookies, load_cookies
 
 load_dotenv()
 
@@ -14,53 +12,73 @@ SOMPO_TOTP_SECRET = os.getenv("SOMPO_TOTP_SECRET")
 SOMPO_LOGIN_URL = os.getenv("SOMPO_LOGIN_URL", "https://ejento.somposigorta.com.tr/dashboard/login")
 
 
-async def login():
-    page = await new_page()
+def login():
+    """
+    Sompo portal login
+    """
+    page = new_page()
     try:
-        await page.goto(SOMPO_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_load_state("networkidle")
+        print(f"[*] Login URL'e gidiliyor: {SOMPO_LOGIN_URL}")
+        page.goto(SOMPO_LOGIN_URL, timeout=30000)
 
         # Username
-        await page.fill('input[name="username"]', SOMPO_USER)
+        page.fill('input[name="username"]', SOMPO_USER)
+        page.fill('input[name="password"]', SOMPO_PASS)
 
-        # Password
-        await page.fill('input[name="password"]', SOMPO_PASS)
+        # Login button
+        page.click('button[type="submit"]')
 
-        # Login butonu
-        await page.click('button[type="submit"]')
-
-        # TOTP (Google Auth)
+        # 2FA kontrol
         try:
-            await page.wait_for_selector('input[type="text"][maxlength="6"]', timeout=5000)
+            page.wait_for_selector('input[type="text"][maxlength="6"]', timeout=5000)
             if SOMPO_TOTP_SECRET:
                 totp = pyotp.TOTP(SOMPO_TOTP_SECRET).now()
-                await page.fill('input[type="text"][maxlength="6"]', totp)
-                await page.press('input[type="text"][maxlength="6"]', "Enter")
+                page.fill('input[type="text"][maxlength="6"]', totp)
+                page.click('button[type="submit"]')
         except PlaywrightTimeout:
-            print("TOTP alanı bulunamadı, belki bypass oldu")
+            print("2FA ekranı çıkmadı, direkt dashboard olabilir.")
 
-        await page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("networkidle")
 
-        # Çerez kaydet
-        cookies = await page.context.cookies()
-        cookies_dir = Path("storage/cookies")
-        cookies_dir.mkdir(parents=True, exist_ok=True)
-        with open(cookies_dir / "sompo.json", "w", encoding="utf-8") as f:
-            json.dump(cookies, f, indent=2, ensure_ascii=False)
+        # Çerezleri kaydet
+        save_cookies("sompo")
 
-        return {"ok": True, "msg": "Sompo login başarılı", "cookies_saved": True}
+        return {"ok": True, "msg": "Login başarılı", "url": page.url}
+
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
     finally:
-        await close_page(page)
+        close_browser()
 
 
-async def get_tamamlayici_quote(params: dict):
-    page = await new_page()
+def get_tamamlayici_quote(params: dict):
+    """
+    Tamamlayıcı sağlık sigortası teklifi alır
+    """
+    page = new_page()
     try:
-        await page.goto(SOMPO_LOGIN_URL.replace("/login", ""), wait_until="networkidle")
-        return {"ok": True, "msg": "Teklif sayfası açıldı (dummy)", "url": page.url}
+        # Çerez yükle
+        if not load_cookies("sompo"):
+            result = login()
+            if not result.get("ok"):
+                return {"ok": False, "error": "Login başarısız"}
+            load_cookies("sompo")
+
+        # Dashboard
+        dashboard_url = SOMPO_LOGIN_URL.replace("/login", "")
+        page.goto(dashboard_url, timeout=30000)
+
+        # Menüye tıkla
+        try:
+            page.click('text=Tamamlayıcı Sağlık', timeout=5000)
+        except:
+            return {"ok": False, "error": "Menü bulunamadı"}
+
+        return {"ok": True, "msg": "Tamamlayıcı sağlık teklif sayfasına ulaşıldı", "url": page.url}
+
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
     finally:
-        await close_page(page)
+        close_browser()
