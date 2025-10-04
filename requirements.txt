@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+playwright
+python-dotenv
+pyotp
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+requests
+httpx
