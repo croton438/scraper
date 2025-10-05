@@ -1,6 +1,14 @@
-# Insurance Scraper API 🚀
+# 🔐 Sompo Login Otomasyonu
 
-FastAPI + Playwright kullanarak sigorta şirketleri portal entegrasyonları.
+Playwright kullanarak Sompo Sigorta portalına otomatik giriş yapan basit bir API.
+
+## ✨ Özellikler
+
+- ✅ Kullanıcı adı ve şifre ile otomatik giriş
+- ✅ Google Authenticator (TOTP) ile 2FA doğrulama
+- ✅ Oturum bilgilerini otomatik kaydetme (cookies)
+- ✅ Hata durumunda ekran görüntüsü alma
+- ✅ FastAPI ile REST API
 
 ## 📁 Proje Yapısı
 
@@ -8,24 +16,18 @@ FastAPI + Playwright kullanarak sigorta şirketleri portal entegrasyonları.
 scraper/
 │── main.py                 # FastAPI giriş noktası
 │── requirements.txt        # Python bağımlılıkları
-│── README.md              # Bu dosya
+│── CONFIG.md              # Konfigürasyon ayarları
 │
 ├── utils/
-│   ├── __init__.py
 │   └── browser.py         # Playwright browser yönetimi
 │
 ├── portals/
-│   ├── __init__.py
-│   ├── sompo.py          # Sompo Sigorta (✅ İmplemente)
-│   ├── anadolu.py        # Anadolu Sigorta (🔜 Yakında)
-│   ├── atlas.py          # Atlas Sigorta (🔜 Yakında)
-│   ├── koru.py           # Koru Sigorta (🔜 Yakında)
-│   ├── quick.py          # Quick Sigorta (🔜 Yakında)
-│   ├── doga.py           # Doğa Sigorta (🔜 Yakında)
-│   └── seker.py          # Şeker Sigorta (🔜 Yakında)
+│   └── sompo.py          # Sompo login modülü
 │
-└── storage/
-    └── cookies/           # Portal çerezleri (otomatik kaydedilir)
+├── storage/
+│   └── cookies/           # Oturum bilgileri (otomatik oluşur)
+│
+└── logs/                  # Ekran görüntüleri (otomatik oluşur)
 ```
 
 ## 🔧 Kurulum
@@ -59,172 +61,94 @@ playwright install chromium
 Kök dizinde `.env` dosyası oluşturun:
 
 ```env
-# Sompo Sigorta Credentials
+# Sompo Login Bilgileri
+SOMPO_LOGIN_URL=https://ejento.somposigorta.com.tr/dashboard/login
 SOMPO_USER=kullanici_adiniz
 SOMPO_PASS=sifreniz
-SOMPO_TOTP_SECRET=base32_secret_key  # Opsiyonel, 2FA varsa
-SOMPO_LOGIN_URL=https://portal.sompo.com.tr/login
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-HEADLESS=true
+SOMPO_TOTP_SECRET=your_totp_secret_key_here
 ```
 
-**TOTP Secret Nasıl Alınır?**
-- 2FA kurulumunda gösterilen QR kodunu kopyalayın
-- Base32 formatındaki secret key'i alın
-- `.env` dosyasına ekleyin
+> 📖 Detaylı konfigürasyon bilgisi için [CONFIG.md](CONFIG.md) dosyasına bakın.
 
 ## 🚀 Çalıştırma
 
-### Development Modu (Auto-reload)
-
-```bash
+```powershell
 python main.py
-```
-
-veya
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Production Modu
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 API şu adreste çalışacaktır: `http://localhost:8000`
 
-Swagger UI: `http://localhost:8000/docs`
+Swagger UI (API Dokümantasyonu): `http://localhost:8000/docs`
 
 ## 📡 API Kullanımı
 
-### Sompo Sigorta
-
-#### 1. Login (Otomatik - .env'den okur)
+### Sompo Login
 
 ```bash
 POST http://localhost:8000/sompo/login
 ```
 
-**Not:** `.env` dosyasında `SOMPO_USER`, `SOMPO_PASS` ve `SOMPO_TOTP_SECRET` olmalı.
-
-#### 2. Tamamlayıcı Sağlık Teklifi
-
-```bash
-POST http://localhost:8000/sompo/tamamlayici
-Content-Type: application/json
-
-{
-  "parameters": {
-    "customer_name": "Ahmet Yılmaz",
-    "tc_no": "12345678901",
-    "package": "premium"
-  }
-}
-```
+**Not:** `.env` dosyasında `SOMPO_USER`, `SOMPO_PASS` ve `SOMPO_TOTP_SECRET` değerleri olmalı.
 
 #### PowerShell'de Test
 
 ```powershell
-# Login
 Invoke-RestMethod -Uri "http://localhost:8000/sompo/login" -Method POST
-
-# Teklif
-$body = @{
-    parameters = @{
-        customer_name = "Ahmet Yılmaz"
-        tc_no = "12345678901"
-    }
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://localhost:8000/sompo/tamamlayici" `
-    -Method POST `
-    -ContentType "application/json" `
-    -Body $body
 ```
 
-### Health Check
+#### Curl ile Test
 
 ```bash
-GET http://localhost:8000/health
+curl -X POST http://localhost:8000/sompo/login
 ```
 
-## 🔐 Çerez Yönetimi
+#### Başarılı Yanıt Örneği
 
-- Login sonrası çerezler otomatik olarak `storage/cookies/{company}.json` dosyasına kaydedilir
-- Sonraki isteklerde çerezler otomatik yüklenir, yeniden login gerekmez
-- Çerezler geçersiz olduğunda otomatik olarak yeniden login yapılır
-
-## 🎯 Yeni Şirket Ekleme
-
-1. `portals/` klasörüne yeni dosya oluştur (örn: `yeni_sirket.py`)
-2. `BrowserManager` kullanarak login ve teklif fonksiyonları yaz
-3. `main.py` dosyasına endpoint'leri ekle
-
-Örnek şablon:
-
-```python
-from utils.browser import BrowserManager
-
-class YeniSirketPortal:
-    def __init__(self):
-        self.browser_manager = BrowserManager()
-        self.company_name = "yeni_sirket"
-        self.base_url = "https://portal-url.com"
-    
-    async def login(self, email: str, password: str):
-        # Login implementasyonu
-        pass
-    
-    async def get_quote(self, parameters: dict):
-        # Teklif alma implementasyonu
-        pass
-    
-    async def close(self):
-        await self.browser_manager.close_browser()
+```json
+{
+  "ok": true,
+  "msg": "Sompo login tamamlandı",
+  "url": "https://ejento.somposigorta.com.tr/dashboard",
+  "screenshot": "logs/sompo_after_login.png"
+}
 ```
 
-## 📝 Özellikler
+#### Hata Yanıtı Örneği
 
-- ✅ Otomatik çerez yönetimi (login persistence)
-- ✅ Google Auth desteği
-- ✅ Screenshot alma (hata durumlarında)
-- ✅ Headless/Headful mod desteği
-- ✅ FastAPI ile RESTful API
-- ✅ Swagger UI dokümantasyonu
-- ✅ Modüler ve genişletilebilir yapı
+```json
+{
+  "ok": false,
+  "error": "Timeout exceeded",
+  "screenshot": "logs/sompo_LOGIN_ERROR.png"
+}
+```
+
+## 🔄 Nasıl Çalışır?
+
+1. **Login URL'ye Git**: `.env` dosyasındaki `SOMPO_LOGIN_URL` adresine gider
+2. **Kimlik Bilgileri**: Kullanıcı adı ve şifreyi otomatik doldurur
+3. **Google Authenticator**: TOTP secret key kullanarak 6 haneli kodu üretir ve girer
+4. **Oturum Kaydet**: Başarılı girişten sonra cookies'leri `storage/cookies/sompo.json` dosyasına kaydeder
+5. **Ekran Görüntüsü**: İşlem sonunda ekran görüntüsü alır (`logs/` klasörüne)
 
 ## 🛠️ Teknolojiler
 
-- **FastAPI**: Modern, hızlı web framework
+- **Python 3.11+**
+- **FastAPI**: Modern REST API framework
 - **Playwright**: Browser automation
+- **pyotp**: Google Authenticator (TOTP) kod üretimi
 - **Uvicorn**: ASGI server
-- **Pydantic**: Veri validasyonu
 
 ## 📌 Notlar
 
-- İlk login sırasında browser açılacaktır (headless=False)
-- Google Auth için manuel 2FA girişi gerekebilir
-- Portal selector'ları gerçek URL'lere göre güncellenmeli
-- Production'da headless=True kullanılabilir
+- ⚠️ Browser headless=False modda çalışır (işlemleri görebilirsiniz)
+- ⚠️ Google Authenticator secret key'i Base32 formatında olmalı
+- ✅ Cookies kaydedilir, sonraki işlemler için kullanılabilir
+- ✅ Hata durumunda ekran görüntüsü otomatik alınır
 
-## 🚧 Geliştirme Durumu
+## 🔐 Güvenlik
 
-| Şirket | Login | Teklif | Durum |
-|--------|-------|--------|-------|
-| Sompo | ✅ | 🔄 | Beta |
-| Anadolu | 🔜 | 🔜 | Planlı |
-| Atlas | 🔜 | 🔜 | Planlı |
-| Koru | 🔜 | 🔜 | Planlı |
-| Quick | 🔜 | 🔜 | Planlı |
-| Doğa | 🔜 | 🔜 | Planlı |
-| Şeker | 🔜 | 🔜 | Planlı |
-
-## 📞 İletişim
-
-Sorularınız için issue açabilirsiniz.
+- `.env` dosyasını **asla** Git'e commit etmeyin
+- `storage/cookies/` klasörünü `.gitignore`'a ekleyin
+- Hassas bilgileri saklamak için environment variables kullanın
 

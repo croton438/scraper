@@ -1,35 +1,30 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Dict, Any
+import uvicorn
+from fastapi import FastAPI
 from portals import sompo
 
-app = FastAPI(
-    title="Insurance Scraper API",
-    description="Sigorta scraping API",
-    version="1.0.0"
-)
+app = FastAPI(title="Sompo Login Otomasyonu")
 
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Sompo Login API başlatıldı")
+    print("📝 Kullanım: POST /sompo/login")
 
-class QuoteRequest(BaseModel):
-    parameters: Dict[str, Any]
-
-
-@app.get("/")
-def root():
-    return {"status": "running", "endpoints": ["/sompo/login", "/sompo/tamamlayici"]}
-
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("🛑 API kapatılıyor...")
 
 @app.post("/sompo/login")
-def sompo_login():
-    result = sompo.login()
-    if not result.get("ok"):
-        raise HTTPException(status_code=401, detail=result.get("error"))
-    return result
+async def sompo_login():
+    """
+    Sompo portalına giriş yapar:
+    - Kullanıcı adı ve şifre ile giriş
+    - Google Authenticator (TOTP) ile 2FA doğrulama
+    """
+    try:
+        result = await sompo.login()
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-
-@app.post("/sompo/tamamlayici")
-def sompo_tamamlayici(request: QuoteRequest):
-    result = sompo.get_tamamlayici_quote(request.parameters)
-    if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("error"))
-    return result
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, loop="asyncio")

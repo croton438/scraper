@@ -1,8 +1,9 @@
 import os
 import pyotp
 from dotenv import load_dotenv
-from playwright.sync_api import TimeoutError as PlaywrightTimeout
-from utils.browser import new_page, close_browser, save_cookies, load_cookies
+from pathlib import Path
+from playwright.async_api import TimeoutError as PlaywrightTimeout
+from utils.browser import new_page, close_page, save_cookies
 
 load_dotenv()
 
@@ -11,74 +12,71 @@ SOMPO_PASS = os.getenv("SOMPO_PASS")
 SOMPO_TOTP_SECRET = os.getenv("SOMPO_TOTP_SECRET")
 SOMPO_LOGIN_URL = os.getenv("SOMPO_LOGIN_URL", "https://ejento.somposigorta.com.tr/dashboard/login")
 
-
-def login():
+async def login():
     """
-    Sompo portal login
+    Sompo portalına giriş yapar:
+    1. Login URL'ye gider
+    2. Kullanıcı adı ve şifre ile giriş yapar
+    3. Google Authenticator (TOTP) kodu ile 2FA doğrulama yapar
     """
-    page = new_page()
+    page = await new_page()
     try:
-        print(f"[*] Login URL'e gidiliyor: {SOMPO_LOGIN_URL}")
-        page.goto(SOMPO_LOGIN_URL, timeout=30000)
+        print("🔐 [1/4] Login URL'ye gidiliyor:", SOMPO_LOGIN_URL)
+        await page.goto(SOMPO_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_load_state("networkidle")
 
+        print("👤 [2/4] Kullanıcı adı ve şifre giriliyor...")
         # Username
-        page.fill('input[name="username"]', SOMPO_USER)
-        page.fill('input[name="password"]', SOMPO_PASS)
+        await page.fill('input[name="username"]', SOMPO_USER)
+        # Password
+        await page.fill('input[name="password"]', SOMPO_PASS)
+        # Giriş butonu
+        await page.click('button[type="submit"]')
 
-        # Login button
-        page.click('button[type="submit"]')
+        await page.wait_for_load_state("networkidle")
+        await page.wait_for_timeout(1500)
 
-        # 2FA kontrol
-        try:
-            page.wait_for_selector('input[type="text"][maxlength="6"]', timeout=5000)
-            if SOMPO_TOTP_SECRET:
-                totp = pyotp.TOTP(SOMPO_TOTP_SECRET).now()
-                page.fill('input[type="text"][maxlength="6"]', totp)
-                page.click('button[type="submit"]')
-        except PlaywrightTimeout:
-            print("2FA ekranı çıkmadı, direkt dashboard olabilir.")
+        print("🔑 [3/4] Google Authenticator kodu ile doğrulama yapılıyor...")
+        # TOTP (Google Authenticator)
+        if SOMPO_TOTP_SECRET:
+            try:
+                await page.wait_for_selector('input[type="text"]', timeout=5000)
+                code = pyotp.TOTP(SOMPO_TOTP_SECRET).now()
+                print(f"   → TOTP Kodu: {code}")
+                await page.fill('input[type="text"]', code)
+                await page.press('input[type="text"]', "Enter")
+            except PlaywrightTimeout:
+                print("   ⚠ TOTP ekranı bulunamadı, devam ediliyor...")
 
-        page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("networkidle")
+        await page.wait_for_timeout(1500)
 
-        # Çerezleri kaydet
-        save_cookies("sompo")
+        print("💾 [4/4] Oturum bilgileri kaydediliyor...")
+        # Cookies kaydet
+        Path("storage/cookies").mkdir(parents=True, exist_ok=True)
+        await save_cookies("sompo", page)
 
-        return {"ok": True, "msg": "Login başarılı", "url": page.url}
+        # Screenshot
+        Path("logs").mkdir(exist_ok=True)
+        await page.screenshot(path="logs/sompo_after_login.png", full_page=True)
 
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-    finally:
-        close_browser()
-
-
-def get_tamamlayici_quote(params: dict):
-    """
-    Tamamlayıcı sağlık sigortası teklifi alır
-    """
-    page = new_page()
-    try:
-        # Çerez yükle
-        if not load_cookies("sompo"):
-            result = login()
-            if not result.get("ok"):
-                return {"ok": False, "error": "Login başarısız"}
-            load_cookies("sompo")
-
-        # Dashboard
-        dashboard_url = SOMPO_LOGIN_URL.replace("/login", "")
-        page.goto(dashboard_url, timeout=30000)
-
-        # Menüye tıkla
-        try:
-            page.click('text=Tamamlayıcı Sağlık', timeout=5000)
-        except:
-            return {"ok": False, "error": "Menü bulunamadı"}
-
-        return {"ok": True, "msg": "Tamamlayıcı sağlık teklif sayfasına ulaşıldı", "url": page.url}
+        print("✅ Sompo login başarılı!")
+        return {
+            "ok": True, 
+            "msg": "Sompo login tamamlandı", 
+            "url": page.url,
+            "screenshot": "logs/sompo_after_login.png"
+        }
 
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        print(f"❌ Login hatası: {str(e)}")
+        Path("logs").mkdir(exist_ok=True)
+        await page.screenshot(path="logs/sompo_LOGIN_ERROR.png", full_page=True)
+        return {
+            "ok": False, 
+            "error": str(e),
+            "screenshot": "logs/sompo_LOGIN_ERROR.png"
+        }
 
     finally:
-        close_browser()
+        await close_page(page)
